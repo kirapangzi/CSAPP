@@ -460,10 +460,259 @@ int generate_repeat_pattern(int a, int k, int j)
 		return 0;
 }
 
+#if 0 
+float fpwr2(int x)
+{
+	/* Result exponent and fraction */
+	unsigned exp, frac;
+	unsigned u;
+	if (x < -149) {
+		/* Too small. Return 0.0 */
+		exp = 0;
+		frac = 0;
+	} else if (x < -126) {
+		/* Denormalized result */
+		exp = 0;
+		frac = 0x400000 >> (-x - 126);
+	} else if (x < 128) {
+		/* Normalized result. */
+		exp = x + 127;
+		frac = 0;
+	} else {
+		/* Too big. Return +oo */
+		exp = 0xff;
+		frac = 0;
+	}
+	
+	/* Pack exp and frac into 32 bits */
+	u = exp << 23 | frac;
+	/* Return as float */
+	return u2f(u);
+}
+#endif
+
+/* Access bit-level representation floating-point number */
+typedef unsigned float_bits;
+
+/* If f is denorm, return 0. Otherwise, return f */
+float_bits float_denorm_zero(float_bits f) {
+	/* Decompose bit representation into parts */
+	unsigned sign = f>>31;
+	unsigned exp = f>>23 & 0xFF;
+	unsigned frac = f & 0x7FFFFF;
+	if (exp == 0) {
+		/* Denormalized. Set fraction to 0 */
+		frac = 0;
+	}
+	/* Reassemble bits */
+	return (sign << 31) | (exp << 23) | frac;
+}
+
+/* Compute -f. If f is NaN, then return f. */
+float_bits float_negate(float_bits f)
+{
+	unsigned sign = f>>31;
+	unsigned exp = f>>23 & 0xFF;
+	unsigned frac = f & 0x7FFFFF;
+
+	if ((exp == 0xFF) && (frac != 0))
+		return f;
+	return (!sign << 31) | (exp << 23) | frac;
+}
+
+/* Compute |f|. If f is NaN, then return f. */
+float_bits float_absval(float_bits f)
+{
+	unsigned sign = f>>31;
+	unsigned exp = f>>23 & 0xFF;
+	unsigned frac = f & 0x7FFFFF;
+
+	if ((exp == 0xFF) && (frac != 0))
+		return f;
+
+	return exp << 23 | frac;
+}
+
+/* Compute 2*f. If f is NaN, then return f. */
+float_bits float_twice(float_bits f)
+{
+	unsigned sign = f>>31;
+	unsigned exp = f>>23 & 0xFF;
+	unsigned frac = f & 0x7FFFFF;
+
+	if ((exp == 0xFF) && (frac != 0))
+		return f;
+
+	if ((exp == 0xFF) && (frac == 0))
+		return f;
+	else if (exp == 0xFE) {
+		exp += 1;
+		frac = 0;
+	} else if (exp == 0) {
+		if (frac & 400000) {
+			exp = 1;
+			frac = (frac & 0x3FFFFF) << 1;
+		} else
+			frac = frac << 1;
+	} else
+		exp += 1;
+
+	return (sign << 31) | (exp << 23) | frac;
+}
+
+/* Compute 0.5*f. If f is NaN, then return f. */
+float_bits float_half(float_bits f)
+{
+	unsigned sign = f>>31;
+	unsigned exp = f>>23 & 0xFF;
+	unsigned frac = f & 0x7FFFFF;
+
+	//NaN
+	if ((exp == 0xFF) && (frac != 0))
+		return f;
+	//infinite
+	if ((exp == 0xFF) && (frac == 0)) {
+		return f;
+	} else if (exp == 0x1) {
+		exp = 0;
+		frac += (0x1 << 23);
+		frac = frac >> 1;
+	} else if (exp == 0)
+		frac = frac >> 1;
+	else
+		exp -= 1;
+
+	return (sign << 31) | (exp << 23) | frac;
+}
+
+/*
+* Compute (int) f.
+* If conversion causes overflow or f is NaN, return 0x80000000
+*/
+int float_f2i(float_bits f)
+{
+	unsigned sign = f>>31;
+	unsigned exp = f>>23 & 0xFF;
+	unsigned frac = f & 0x7FFFFF;
+
+	unsigned limit = 0x80000000;
+	int result = 0;
+
+	// we should avoid multiple shift
+	unsigned higher = 0x1 << 23;
+	int exp_value = exp -127;
+	frac += higher;
+	
+
+	//NaN
+	if ((exp == 0xFF) && (frac != 0))
+		return limit;
+	//infinite
+	if ((exp == 0xFF) && (frac == 0))
+		return limit;
+	// overflow
+	if (exp_value >= 31)
+		return limit;
+	
+	if (exp_value >= 23) {
+		result = (sign << 31) | (frac << (exp_value - 23));
+	} else if (exp - 127 >= 0) {
+		result = (sign << 31) | (frac >> (23 - exp_value));
+	} else 
+		result = 0;
+	return result;
+
+}
+
+/* Compute (float) i */
+float_bits float_i2f(int i)
+{
+	unsigned sign;
+	unsigned exp;
+	unsigned frac;
+
+	int j;
+
+	if (i == 0x80000000) {
+		sign = 1;
+		exp = 127 + 31;
+		frac = 0;
+		return (sign << 31) | (exp << 23) | frac;
+	} 
+	if (i == 0) 
+		return 0;
+	
+	sign = (unsigned)i >> 31;
+	//remove sign
+	if (sign)
+		i = -i;
+	//get most 
+	j = leftmost_one(i);
+	frac = i ^ j;
+	printf("i %x j %x frac %x\n", i, j, frac);
+
+	j = j >> 1;
+	int j_bits = 0;
+	while (j != 0) {
+		j = j >> 1;
+		j_bits++;
+	}	
+	if (j_bits < 23) 
+		frac = frac << (23 - j_bits);
+	if (j_bits > 23) {
+		frac = frac >> (j_bits -23);
+	}
+	exp = 127 + j_bits;
+	return (sign << 31) | (exp << 23) | frac;
+}
+
+
 int main(int argc, char *argv[])
 {
-
+	if (argc > 1) {
+		int i = (int)strtoul(argv[1], NULL, 0);
+		unsigned k;
+		float f1;
+		k = float_i2f(i);
+		f1 = *(float *)&k;
+		printf("%x %d float_i2f %x %f\n", i, i, k, f1);
+	}
+	
 #if 0
+
+	if (argc > 1) {
+		unsigned i = strtoul(argv[1], NULL, 0);
+		int j = 0;
+		float f1;
+		j = float_f2i(i);
+		f1 = *(float *)&i;
+		printf("%x %f float_f2i %d\n", i, f1, j);
+	}
+	
+	unsigned i = 0x40000000;
+	float f1;
+	f1 = *(float *)&i;
+	printf("%x is %f\n",i,f1);
+
+
+
+ 	
+	if (argc > 1) {
+		unsigned i = strtoul(argv[1], NULL, 0);
+		unsigned j = 0;
+		float f1, f2;
+		j = float_half(i);
+		f1 = *(float *)&i;
+		f2 = *(float *)&j;
+		printf("%x float_half %x\n", i, j);
+		printf("float %.10f float_half %.10f\n", f1, f2);
+	} 
+
+
+	unsigned i;
+	for (i = 0; i < UINT_MAX; i++)
+		printf("%x float_negate %x\n", i, float_negate(i));
+
 	printf("generate_repeat_pattern %d %d %d is %x\n", 0, 31, 0, generate_repeat_pattern(0,31,0));
 	printf("generate_repeat_pattern %d %d %d is %x\n", 1, 4, 4, generate_repeat_pattern(1,4,4));
 	printf("generate_repeat_pattern %d %d %d is %x\n", 1, 8, 8, generate_repeat_pattern(1,8,8));
