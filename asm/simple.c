@@ -1,4 +1,6 @@
 
+#if 0
+
 int exchange(int *xp, int y)
 {
 	int x = *xp;
@@ -8,7 +10,6 @@ int exchange(int *xp, int y)
 }
 
 
-#if 0
 int simple_int(int *xp, int y)
 {
 	int t = *xp + y;
@@ -39,12 +40,15 @@ short simple_short(short *xp, short y)
 	return t;
 }
 
+#endif
 long simple_long(long *xp, long y)
 {
 	long t = *xp + y;
 	*xp = t;
 	return t;
 }
+
+#if 0
 
 char *simple_pointer(char **xp, char *y)
 {
