@@ -13,6 +13,7 @@ int main()
 	
 	float f;
 	double d;
+	long double ld;
 	
 	size_t s;
 
@@ -25,5 +26,6 @@ int main()
 	printf("size of int pointer is %d\n", sizeof(ip));
 	printf("size of float is %d\n", sizeof(f));
 	printf("size of double is %d\n", sizeof(d));
+	printf("size of long double is %d\n", sizeof(ld));
 	printf("size of size_t is %d\n", sizeof(s));
 }
